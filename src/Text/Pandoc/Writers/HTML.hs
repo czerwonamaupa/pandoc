@@ -1179,9 +1179,7 @@ inlineToHtml opts inline = do
                                          writerIdentifierPrefix opts ++ "fn" ++ ref)
                                        ! A.class_ "footnote-ref"
                                        ! prefixedId opts ("fnref" ++ ref)
-                                       $ (if isJust epubVersion
-                                             then id
-                                             else H.sup)
+                                       $ H.sup
                                        $ toHtml ref
                         return $ case epubVersion of
                                       Just EPUB3 -> link ! customAttribute "epub:type" "noteref"
@@ -1205,31 +1203,26 @@ blockListToNote :: PandocMonad m
                 -> StateT WriterState m Html
 blockListToNote opts ref blocks = do
   html5 <- gets stHtml5
-  -- If last block is Para or Plain, include the backlink at the end of
+  -- If first block is Para or Plain, include the backlink at the begining of
   -- that block. Otherwise, insert a new Plain block with the backlink.
-  let kvs = if html5 then [("role","doc-backlink")] else []
-  let backlink = [Link ("",["footnote-back"],kvs)
-                    [Str "↩"] ("#" ++ "fnref" ++ ref,[])]
-  let blocks'  = if null blocks
+  let kvs      = if html5 then [("role","doc-backlink")] else []
+      backlink = [Link ("",["footnote-back"],kvs) [Str (ref ++ ".")] ("#" ++ "fnref" ++ ref,[])]
+      space = [Space]
+      blocks'  = if null blocks
                     then []
-                    else let lastBlock   = last blocks
-                             otherBlocks = init blocks
-                         in  case lastBlock of
-                                  (Para lst)  -> otherBlocks ++
-                                                 [Para (lst ++ backlink)]
-                                  (Plain lst) -> otherBlocks ++
-                                                 [Plain (lst ++ backlink)]
-                                  _           -> otherBlocks ++ [lastBlock,
-                                                 Plain backlink]
+                    else let firstBlock  = head blocks
+                             otherBlocks = tail blocks
+                         in  case firstBlock of
+                                  (Para lst)  -> [Para (backlink ++ space ++ lst )] ++ otherBlocks
+                                  (Plain lst) -> [Plain (backlink ++ space ++ lst )] ++ otherBlocks
+                                  _           -> [Plain backlink, Plain space, firstBlock] ++ otherBlocks
   contents <- blockListToHtml opts blocks'
   let noteItem = H.li ! prefixedId opts ("fn" ++ ref) $ contents
   epubVersion <- gets stEPUBVersion
   let noteItem' = case epubVersion of
-                       Just EPUB3 -> noteItem !
-                                       customAttribute "epub:type" "footnote"
-                       _ | html5  -> noteItem !
-                                       customAttribute "role" "doc-endnote"
-                       _          -> noteItem
+                      Just EPUB3 -> noteItem ! customAttribute "epub:type" "footnote"
+                      _ | html5  -> noteItem ! customAttribute "role" "doc-endnote"
+                      _          -> noteItem
   return $ nl opts >> noteItem'
 
 isMathEnvironment :: String -> Bool
